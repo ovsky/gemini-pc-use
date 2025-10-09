@@ -29,7 +29,7 @@ This agent enables autonomous control of your desktop using AI. It continuously 
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/pc-use.git
+git clone https://github.com/NeverBeLazyG/pc-use.git
 cd pc-use
 ```
 
