@@ -4,10 +4,12 @@ This guide will walk you through the step-by-step installation of the Desktop Co
 
 ## System Requirements
 
-- **Operating System**: Windows 11 (recommended) or Windows 10
+- **Operating System**: Windows 11, Windows 10, macOS, or Linux
 - **Python**: Version 3.8 or higher
 - **Anaconda/Miniconda**: For virtual environment management
 - **Internet**: For API access to Google Gemini
+
+**Note**: For macOS and Linux users, you need to modify the `SYSTEM_PROMPT` in `agent.py` to specify your operating system. See the Configuration section in [README.md](README.md).
 
 ## Step 1: Install Anaconda/Miniconda
 

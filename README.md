@@ -4,7 +4,9 @@ An AI-powered desktop automation agent that uses Google's Gemini 2.5 Computer-Us
 
 ## 🎯 Description
 
-This agent enables autonomous control of the Windows 11 desktop using AI. It continuously takes screenshots, sends them to the Gemini model, and executes desktop actions (clicking, double-clicking, typing text, pressing keys) based on AI decisions.
+This agent enables autonomous control of your desktop using AI. It continuously takes screenshots, sends them to the Gemini model, and executes desktop actions (clicking, double-clicking, typing text, pressing keys) based on AI decisions.
+
+**Platform Support**: Works on Windows 11, macOS, and Linux. For macOS/Linux, you need to adjust the `SYSTEM_PROMPT` in `agent.py` to match your operating system.
 
 ## ✨ Features
 
@@ -19,7 +21,7 @@ This agent enables autonomous control of the Windows 11 desktop using AI. It con
 
 - Python 3.8 or higher
 - Anaconda or Miniconda
-- Windows 11 (for optimal compatibility)
+- Windows 11, macOS, or Linux
 - Google Gemini API Key
 
 ## 🚀 Installation
@@ -114,6 +116,24 @@ pc-use/
 - All actions are logged in `computer-use.log`
 
 ## 🔧 Configuration
+
+### Platform-Specific Setup (macOS/Linux)
+
+If you're using macOS or Linux, you **must** modify the `SYSTEM_PROMPT` in `agent.py` to match your operating system:
+
+```python
+# For macOS
+SYSTEM_PROMPT = """
+You are operating a macOS desktop. Your task is to achieve the goal specified by the user by executing a series of actions.
+...
+"""
+
+# For Linux
+SYSTEM_PROMPT = """
+You are operating a Linux desktop. Your task is to achieve the goal specified by the user by executing a series of actions.
+...
+"""
+```
 
 ### Customize System Prompt
 
