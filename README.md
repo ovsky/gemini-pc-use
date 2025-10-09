@@ -30,7 +30,7 @@ This agent enables autonomous control of your desktop using AI. It continuously 
 
 ```bash
 git clone https://github.com/NeverBeLazyG/gemini-pc-use.git
-cd pc-use
+cd gemini-pc-use
 ```
 
 ### 2. Create Conda environment
