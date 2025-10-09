@@ -1,6 +1,6 @@
 # Desktop Computer Use Agent
 
-An AI-powered desktop automation agent that uses Google's Gemini 2.5 Computer-Use model to autonomously execute Windows 11 desktop tasks through natural language commands.
+An AI-powered desktop automation agent that uses Google's Gemini 2.5 Computer-Use model to autonomously execute Windows/macOS/Linux desktop tasks through natural language commands.
 
 ## 🎯 Description
 
