@@ -5,8 +5,8 @@ This guide will walk you through the step-by-step installation of the Desktop Co
 ## System Requirements
 
 - **Operating System**: Windows 11, Windows 10, macOS, or Linux
-- **Python**: Version 3.8 or higher
-- **Anaconda/Miniconda**: For virtual environment management
+- **Python**: Version 3.13 (the launcher uses `py -3.13`)
+- **Anaconda/Miniconda**: Optional, for virtual environment management
 - **Internet**: For API access to Google Gemini
 
 **Note**: For macOS and Linux users, you need to modify the `SYSTEM_PROMPT` in `agent.py` to specify your operating system. See the Configuration section in [README.md](README.md).
@@ -38,7 +38,7 @@ cd pc-use
 Open Anaconda Prompt or a terminal and run:
 
 ```bash
-conda create -n computer-use-desktop python=3.10
+conda create -n computer-use-desktop python=3.13
 ```
 
 Confirm the installation with `y` when prompted.
@@ -60,7 +60,8 @@ pip install -r requirements.txt
 ```
 
 This installs the following packages:
-- `google-generativeai` - Gemini API
+- `google-genai` - Gemini API
+- `PyQt6` - Graphical interface
 - `pyautogui` - Desktop automation
 - `Pillow` - Image processing
 - `python-dotenv` - Environment variables
@@ -96,13 +97,21 @@ Replace `YOUR_API_KEY_HERE` with your actual API key.
 
 ## Step 7: Test Installation
 
-Run a simple test:
+Start the graphical interface:
 
 ```bash
-python main.py "Show me the time"
+py -3.13 main.py
 ```
 
-If everything is installed correctly, the agent should start and attempt to execute the task.
+Paste your API key into the key field, describe a goal, and press **Start task**.
+
+You can also run a task directly from the command line:
+
+```bash
+py -3.13 main.py "Show me the time"
+```
+
+If everything is installed correctly, the agent should start and attempt to execute the task. The GUI shows a live log and explains every action in the teaching panel.
 
 ## Troubleshooting
 
@@ -122,6 +131,18 @@ If everything is installed correctly, the agent should start and attempt to exec
   ```bash
   pip install -r requirements.txt
   ```
+
+### PyQt6 not installed
+
+```bash
+py -3.13 -m pip install PyQt6
+```
+
+### Wrong model
+
+The default model is `gemini-3.5-flash-lite`. Choose another model in the GUI,
+or pass `--model` on the command line. The combo box is editable, so you can
+type any model name your API key has access to.
 
 ### Pyautogui not working
 
@@ -151,8 +172,9 @@ conda env remove -n computer-use-desktop
 
 ## Next Steps
 
-- Read the [README.md](README.md) for usage examples
-- Experiment with different commands
+- Read the [README.md](README.md) for GUI and command-line examples
+- Experiment with different commands and models
+- Turn on **Instant click** for faster runs
 - Customize the system prompt in `agent.py` to your needs
 
 ## Support
