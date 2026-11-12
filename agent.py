@@ -17,12 +17,10 @@ from __future__ import annotations
 import io
 import json
 import logging
-import os
 import platform
 import sys
 import threading
 import time
-from pathlib import Path
 from typing import Any
 
 import google.genai as genai
@@ -36,9 +34,10 @@ from config import (
     DEFAULT_MODEL,
     DEFAULT_STEP_DELAY,
     load_config,
-    load_env_files,
+    load_env_file,
     resolve_api_key,
 )
+from pause_control import PauseController
 
 logger = logging.getLogger(__name__)
 
@@ -209,19 +208,20 @@ def run_agent(
     step_delay: float | None = None,
     save_screenshots: bool | None = None,
     cancel_event: threading.Event | None = None,
+    pause_controller: PauseController | None = None,
 ) -> bool:
     """Run the agent until it finishes, fails, or reaches the step limit.
 
     Returns True when the model reports success.
     """
-    load_env_files()
+    load_env_file()
     config = load_config()
 
     resolved_key = (api_key or resolve_api_key(config)).strip()
     if not resolved_key:
         logger.error(
-            "GEMINI_API_KEY was not found. Add it in the GUI, set it in your "
-            "environment, or create a .env file."
+            "GEMINI_API_KEY was not found. Save it in the GUI or with "
+            "`py -3.13 main.py --save-key`, or set it in your environment."
         )
         return False
 
@@ -238,6 +238,8 @@ def run_agent(
         step_delay = float(config.get("step_delay", DEFAULT_STEP_DELAY))
     if save_screenshots is None:
         save_screenshots = bool(config.get("save_screenshots", False))
+
+    controller = pause_controller or PauseController()
 
     client = genai.Client(api_key=resolved_key)
     generate_config = types.GenerateContentConfig(
@@ -263,6 +265,7 @@ def run_agent(
     empty_responses = 0
 
     for step in range(1, max_steps + 1):
+        controller.wait_if_paused(cancel_event)
         if cancel_event is not None and cancel_event.is_set():
             logger.info("[DONE] Task cancelled by the user.")
             return False
@@ -277,7 +280,7 @@ def run_agent(
             if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
                 logger.error("Giving up after repeated screenshot failures.")
                 return False
-            time.sleep(min(2.0, 0.4 * consecutive_errors))
+            controller.sleep(min(2.0, 0.4 * consecutive_errors), cancel_event)
             continue
 
         if save_screenshots:
@@ -291,9 +294,10 @@ def run_agent(
         except Exception as error:  # noqa: BLE001 - Pillow can fail on odd displays
             logger.error("Could not encode the screenshot: %s", error)
             consecutive_errors += 1
-            time.sleep(0.4)
+            controller.sleep(0.4, cancel_event)
             continue
 
+        controller.wait_if_paused(cancel_event)
         logger.info("Thinking with %s...", model_name)
         request_started = time.perf_counter()
         try:
@@ -323,7 +327,7 @@ def run_agent(
             if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
                 logger.error("Giving up after repeated API errors.")
                 return False
-            time.sleep(min(2.0, 0.5 * consecutive_errors))
+            controller.sleep(min(2.0, 0.5 * consecutive_errors), cancel_event)
             continue
 
         elapsed = time.perf_counter() - request_started
@@ -337,11 +341,18 @@ def run_agent(
             if empty_responses >= MAX_EMPTY_RESPONSES:
                 logger.error("Giving up because the model keeps returning no action.")
                 return False
-            time.sleep(0.3)
+            controller.sleep(0.3, cancel_event)
             continue
 
         empty_responses = 0
         consecutive_errors = 0
+
+        # The model may have answered while the user pressed the pause hotkey.
+        # Wait here so no new action starts until the run is resumed.
+        controller.wait_if_paused(cancel_event)
+        if cancel_event is not None and cancel_event.is_set():
+            logger.info("[DONE] Task cancelled by the user.")
+            return False
 
         action_name = function_call.name or ""
         action_args = dict(function_call.args) if function_call.args else {}
@@ -415,10 +426,20 @@ def run_agent(
             del history[: -HISTORY_LIMIT]
 
         if step_delay > 0:
-            time.sleep(step_delay)
+            controller.sleep(step_delay, cancel_event)
 
     logger.warning("[DONE] Reached the step limit of %d steps.", max_steps)
     return False
+
+
+def run_agent_with_pause(user_prompt: str, **kwargs: Any) -> bool:
+    """Run the agent with the global Alt+F10 pause/resume hotkey enabled."""
+    controller = PauseController()
+    controller.start()
+    try:
+        return run_agent(user_prompt, pause_controller=controller, **kwargs)
+    finally:
+        controller.stop()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -427,7 +448,7 @@ def main(argv: list[str] | None = None) -> int:
     if not argv:
         logger.error("Usage: python agent.py \"your goal\"")
         return 2
-    success = run_agent(" ".join(argv))
+    success = run_agent_with_pause(" ".join(argv))
     return 0 if success else 1
 
 

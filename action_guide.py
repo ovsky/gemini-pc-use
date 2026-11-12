@@ -1,7 +1,8 @@
 """Human-readable explanations for every action the agent can take.
 
 The GUI reuses these explanations to teach the user what just happened, why
-the agent did it, and how the underlying mechanism works.
+the agent did it, and how the underlying mechanism works. The texts are kept
+short enough to fit comfortably in the teaching panel.
 """
 
 from __future__ import annotations
@@ -24,16 +25,12 @@ class Guide:
 
 
 def _coord(args: dict[str, Any]) -> str:
-    x = args.get("x", "?")
-    y = args.get("y", "?")
-    return f"({x}, {y})"
+    return f"({args.get('x', '?')}, {args.get('y', '?')})"
 
 
-def _shorten(text: Any, limit: int = 90) -> str:
+def _shorten(text: Any, limit: int = 70) -> str:
     value = str(text)
-    if len(value) <= limit:
-        return value
-    return value[: limit - 1] + "…"
+    return value if len(value) <= limit else value[: limit - 1] + "…"
 
 
 def _keys(args: dict[str, Any]) -> str:
@@ -47,23 +44,19 @@ def overview() -> Guide:
     return Guide(
         title="Ready when you are",
         what=(
-            "The agent works in a loop: it looks at your screen, decides on one "
-            "small action, performs it, and checks the result."
+            "The agent looks at your screen, chooses one small action, performs "
+            "it, then looks again."
         ),
         why=(
-            "Desktop apps rarely offer a reliable API. Vision plus synthetic "
-            "mouse and keyboard input lets the agent operate almost any "
-            "program, including ones that were never designed for automation."
+            "Most desktop apps have no reliable API. Vision plus synthetic "
+            "input can operate almost any program."
         ),
         how=(
-            "Each turn, a screenshot is sent to Gemini. Gemini answers with a "
-            "single tool call, for example a click at normalized coordinates. "
-            "The agent maps those coordinates to your real screen, performs the "
-            "action, and sends a fresh screenshot next turn."
+            "Each turn, a screenshot goes to Gemini. Gemini returns one tool "
+            "call; the agent maps it to your real screen and runs it."
         ),
         tip=(
-            "Describe the goal, not every click. Narrow goals finish faster and "
-            "are easier for the agent to verify."
+            "Describe the goal, not every click. Narrow goals finish faster."
         ),
     )
 
@@ -73,14 +66,12 @@ def thinking(step: int) -> Guide:
         title=f"Step {step}: observing the screen",
         what="Capturing a screenshot and asking Gemini what to do next.",
         why=(
-            "The screenshot is the agent's only source of truth. Looking again "
-            "after every action lets it notice dialogs, loading states, and "
-            "mistakes instead of blindly following a fixed script."
+            "Looking again after every action lets the agent notice dialogs, "
+            "loading states, and mistakes."
         ),
         how=(
-            "The image is downscaled to keep the request small, encoded as JPEG, "
-            "and sent together with the goal, the system rules, and a short "
-            "history of recent actions."
+            "The image is downscaled to 1280×720, JPEG-encoded, and sent with "
+            "the goal, the rules, and recent history."
         ),
         tip="Keep the target window visible and avoid switching apps mid-run.",
     )
@@ -98,8 +89,7 @@ def describe_action(
 
     if name == "click_at":
         motion = (
-            "The pointer jumps straight to the target and clicks without a "
-            "travel animation."
+            "The pointer jumps straight to the target and clicks."
             if instant_click
             else "The pointer glides to the target, then clicks once."
         )
@@ -107,19 +97,14 @@ def describe_action(
             title="Single click",
             what=f"Clicking once at normalized screen position {coordinates}.",
             why=(
-                "One click focuses a text field, selects a row, or presses a "
-                "button. It is the most common way to move the interface "
-                "forward when no keyboard shortcut exists."
+                "One click focuses a field, selects an item, or presses a "
+                "button — the usual way to move forward without a shortcut."
             ),
             how=(
-                "Gemini receives a screenshot and answers with coordinates on a "
-                "0–1000 grid. The agent multiplies them by your real resolution, "
-                f"moves the pointer, and clicks. {motion}"
+                "Gemini answers on a 0–1000 grid; the agent maps the point to "
+                f"your resolution. {motion}"
             ),
-            tip=(
-                "A miss is not fatal: the next screenshot shows the result, so "
-                "the model can correct the next click."
-            ),
+            tip="A miss is not fatal: the next screenshot lets the model correct it.",
         )
 
     if name == "double_click_at":
@@ -127,55 +112,45 @@ def describe_action(
             title="Double click",
             what=f"Double-clicking at normalized screen position {coordinates}.",
             why=(
-                "Double clicks open desktop icons, files, and folders, or enter "
-                "edit mode in some applications. A single click would only "
-                "select the item."
+                "Double clicks open desktop icons, files, and folders. A single "
+                "click would only select the item."
             ),
             how=(
-                "The coordinates are converted to pixels and two clicks are sent "
-                "in quick succession at the same point."
+                "The point is converted to pixels and two quick clicks are sent "
+                "at the same spot."
             ),
-            tip=(
-                "If an icon does not open, the model can retry or use the "
-                "keyboard, for example Enter after selecting the icon."
-            ),
+            tip="If an icon does not open, the model can select it and press Enter.",
         )
 
     if name == "type_text_at":
         text = _shorten(args.get("text", ""))
-        enter = " It then presses Enter." if args.get("press_enter") else ""
+        enter = " Then it presses Enter." if args.get("press_enter") else ""
         return Guide(
             title="Click and type",
-            what=f"Clicking at {coordinates} and typing: “{text}”.{enter}",
+            what=f"Clicking at {coordinates} and typing “{text}”.{enter}",
             why=(
-                "Typing needs a focused input. Clicking first guarantees that "
-                "the text lands in the intended field instead of wherever the "
-                "caret happened to be."
+                "Typing needs focus. Clicking first guarantees the text lands in "
+                "the intended field, not wherever the caret was."
             ),
             how=(
-                "The agent clicks the target, then sends the characters as "
-                "keyboard events. Enter is pressed afterwards when the model "
-                "asks for it, which submits forms and search boxes."
+                "The agent clicks, sends the characters as key events, and "
+                "presses Enter when requested — ready for forms and search."
             ),
-            tip=(
-                "The model usually clears existing text with Ctrl+A and "
-                "Backspace before typing, so old content is replaced."
-            ),
+            tip="The model often clears the field with Ctrl+A and Backspace first.",
         )
 
     if name == "type_text":
         text = _shorten(args.get("text", ""))
-        enter = " It then presses Enter." if args.get("press_enter") else ""
+        enter = " Then it presses Enter." if args.get("press_enter") else ""
         return Guide(
             title="Type at the current focus",
-            what=f"Typing into the already focused control: “{text}”.{enter}",
+            what=f"Typing into the focused control: “{text}”.{enter}",
             why=(
-                "When the correct field is already focused, clicking again can "
-                "move the caret or close a menu. Typing directly is faster and "
-                "safer."
+                "When the right field already has focus, clicking again can move "
+                "the caret or close a menu."
             ),
             how="Characters are sent as keyboard events to the active window.",
-            tip="Useful right after a hotkey such as Win+R opened the Run dialog.",
+            tip="Useful right after Win+R opened the Run dialog.",
         )
 
     if name == "press_key":
@@ -185,12 +160,11 @@ def describe_action(
             what=f"Pressing the {key} key.",
             why=(
                 "Keys confirm dialogs, dismiss popups, move focus, and submit "
-                "forms. Enter and Escape are especially useful for unblocking "
-                "the current screen."
+                "forms. Enter and Escape are the best unblockers."
             ),
             how=(
-                "The key name is normalized to a PyAutoGUI key (for example "
-                "Return becomes Enter) and sent to the active window."
+                "The key name is normalized to a PyAutoGUI key and sent to the "
+                "active window."
             ),
             tip="Escape is a safe way to close an unexpected menu or dialog.",
         )
@@ -201,15 +175,14 @@ def describe_action(
             title="Keyboard shortcut",
             what=f"Pressing the shortcut {combo}.",
             why=(
-                "Shortcuts are the fastest and most reliable way to drive "
-                "Windows. Win+R opens the Run dialog, Ctrl+S saves, and "
-                "Alt+Tab switches windows — without hunting for pixels."
+                "Shortcuts are the fastest, most reliable way to drive Windows — "
+                "no pixel hunting required."
             ),
             how=(
-                "All keys are held down together in order and released in "
-                "reverse order, exactly like a real key combination."
+                "All keys are held together in order, then released in reverse, "
+                "exactly like a real key combination."
             ),
-            tip="Win+R followed by typing an app name is often faster than the Start menu.",
+            tip="Win+R plus an app name is often faster than the Start menu.",
         )
 
     if name == "move_mouse":
@@ -217,24 +190,24 @@ def describe_action(
             title="Move the pointer",
             what=f"Moving the pointer to normalized position {coordinates}.",
             why=(
-                "Sometimes the interface only reacts to hover, for example to "
-                "reveal a tooltip or a hidden toolbar."
+                "Some interfaces only react to hover, for example to reveal a "
+                "tooltip or a hidden toolbar."
             ),
             how="The pointer is moved without pressing any mouse button.",
-            tip="Most tasks can skip this step by using instant click mode.",
+            tip="Most tasks can skip this by using instant click mode.",
         )
 
     if name == "done":
         return Guide(
             title="Task complete",
-            what="The model decided that the goal has been reached and ended the run.",
+            what="The model decided the goal is reached and ended the run.",
             why=(
-                "Stopping explicitly prevents wasted API calls and prevents the "
-                "agent from continuing to click after the job is finished."
+                "Stopping explicitly prevents wasted API calls and extra clicks "
+                "after the job is finished."
             ),
             how=(
-                "Gemini calls the done tool. The agent stops the loop, writes the "
-                "final status to the log, and releases the keyboard and mouse."
+                "Gemini calls the done tool. The agent stops the loop, logs the "
+                "result, and releases keyboard and mouse control."
             ),
             tip="Check the result yourself; the agent reports success, not perfection.",
             tone="success",
@@ -243,25 +216,60 @@ def describe_action(
     return Guide(
         title="Unknown action",
         what=f"The model requested “{name}”, which this client does not implement.",
-        why="Unsupported actions are ignored so a single bad tool call cannot crash the run.",
-        how="The agent logs a warning and asks for the next step using a fresh screenshot.",
-        tip="Update the tool list in agent.py if you need a new capability.",
+        why="Unsupported actions are ignored so one bad tool call cannot crash the run.",
+        how="The agent logs a warning and asks for the next step with a fresh screenshot.",
+        tip="Add the capability to the tool list in agent.py.",
         tone="warn",
+    )
+
+
+def paused() -> Guide:
+    return Guide(
+        title="Agent paused",
+        what="The run is frozen before its next action.",
+        why=(
+            "You can step away, inspect the screen, or take over the mouse "
+            "without the agent clicking somewhere unexpected."
+        ),
+        how=(
+            "Press Alt+F10 again, or click Resume, to continue from the same "
+            "step. The agent never starts a new action while paused."
+        ),
+        tip="The shortcut is global, so it works even when this window is in the background.",
+        tone="warn",
+    )
+
+
+def resumed(step: int = 0) -> Guide:
+    title = f"Step {step}: resumed" if step else "Agent resumed"
+    return Guide(
+        title=title,
+        what="The agent is running again.",
+        why=(
+            "Continuing from the same point avoids repeating actions that were "
+            "already completed before the pause."
+        ),
+        how=(
+            "The pause flag was cleared; the next screenshot and model call "
+            "happen immediately."
+        ),
+        tip="Press Alt+F10 at any time to pause again.",
+        tone="success",
     )
 
 
 def failure(message: str) -> Guide:
     return Guide(
         title="The run stopped",
-        what=_shorten(message, 240),
+        what=_shorten(message, 180),
         why=(
             "A clear failure is better than silently clicking in circles. The "
-            "log below contains the exact error from the agent."
+            "log below contains the exact error."
         ),
         how=(
-            "Check the API key, your internet connection, and the model name. "
-            "Then start the task again."
+            "Check the API key, internet connection, and model name, then start "
+            "the task again."
         ),
-        tip="The last screenshot is saved as debug_screenshot.png when debug mode is on.",
+        tip="Enable debug screenshots to see exactly what the model saw.",
         tone="error",
     )

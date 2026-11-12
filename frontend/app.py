@@ -14,7 +14,6 @@ import shutil
 import subprocess
 import sys
 import time
-from pathlib import Path
 from typing import Any
 
 from PyQt6.QtCore import (
@@ -55,7 +54,15 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from action_guide import Guide, describe_action, failure, overview, thinking
+from action_guide import (
+    Guide,
+    describe_action,
+    failure,
+    overview,
+    paused,
+    resumed,
+    thinking,
+)
 from config import (
     DEFAULT_MODEL,
     KNOWN_MODELS,
@@ -75,6 +82,8 @@ LOG_RE = re.compile(
 ACTION_RE = re.compile(r"^\[ACTION\]\s+([A-Za-z_][\w]*)\s*(\{.*\})\s*$")
 STEP_RE = re.compile(r"^\[STEP\]\s+(\d+)\s*$")
 DONE_RE = re.compile(r"^\[DONE\]\s*(.*)$")
+PAUSED_RE = re.compile(r"^\[PAUSED\]\s*(.*)$")
+RESUMED_RE = re.compile(r"^\[RESUMED\]\s*(.*)$")
 
 EXAMPLES = [
     ("Open Notepad", "Open Notepad and type a short welcome message."),
@@ -117,7 +126,8 @@ QWidget {
     font-size: 10pt;
 }
 QWidget#root {
-    background-color: #070b16;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+        stop:0 #060a14, stop:0.55 #0a1020, stop:1 #0b1428);
 }
 QFrame#header {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
@@ -126,7 +136,8 @@ QFrame#header {
     border-radius: 18px;
 }
 QFrame#card {
-    background-color: #101829;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #111a2d, stop:1 #0d1626);
     border: 1px solid #213052;
     border-radius: 16px;
 }
@@ -134,20 +145,20 @@ QFrame#footer {
     background-color: transparent;
 }
 QLabel#appTitle {
-    font-size: 21pt;
+    font-size: 20pt;
     font-weight: 700;
     color: #ffffff;
 }
 QLabel#appSubtitle {
-    font-size: 9.5pt;
+    font-size: 9pt;
     color: #93a5c8;
 }
 QLabel#logo {
     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
         stop:0 #6d6cff, stop:1 #22d3ee);
     color: #ffffff;
-    border-radius: 16px;
-    font-size: 18pt;
+    border-radius: 14px;
+    font-size: 16pt;
     font-weight: 800;
 }
 QLabel#statusPill {
@@ -179,6 +190,11 @@ QLabel#statusPill[state="stopping"] {
     color: #fbbf24;
     border: 1px solid rgba(251, 191, 36, 0.40);
 }
+QLabel#statusPill[state="paused"] {
+    background-color: rgba(251, 191, 36, 0.12);
+    color: #fbbf24;
+    border: 1px solid rgba(251, 191, 36, 0.40);
+}
 QLabel#headerStat {
     color: #7f92b6;
     font-size: 9pt;
@@ -199,25 +215,25 @@ QLabel#cardHint {
 }
 QLabel#sectionLabel {
     color: #7185aa;
-    font-size: 8pt;
+    font-size: 7.5pt;
     font-weight: 700;
 }
 QLabel#sectionBody {
     color: #d2ddf0;
-    font-size: 9.5pt;
+    font-size: 9pt;
 }
 QLabel#guideTitle {
     color: #ffffff;
-    font-size: 15pt;
+    font-size: 14pt;
     font-weight: 700;
 }
 QLabel#guideMeta {
     color: #7f92b6;
-    font-size: 8.5pt;
+    font-size: 8pt;
 }
 QLabel#tipBody {
     color: #9fb3d9;
-    font-size: 9pt;
+    font-size: 8.5pt;
 }
 QLabel#storageHint {
     color: #66789b;
@@ -335,6 +351,24 @@ QPushButton#ghost:hover {
     background-color: #1a2846;
     color: #d7e2f7;
     border: 1px solid #36497a;
+}
+QPushButton#pause {
+    background-color: #1a2439;
+    color: #fbbf24;
+    border: 1px solid #4a3d24;
+    border-radius: 11px;
+    padding: 12px 16px;
+    font-size: 10pt;
+    font-weight: 600;
+}
+QPushButton#pause:hover {
+    background-color: #24304a;
+    border: 1px solid #6b5730;
+}
+QPushButton#pause:disabled {
+    background-color: #141a29;
+    color: #4d5a74;
+    border: 1px solid #202b45;
 }
 QPushButton#chip {
     background-color: #111b30;
@@ -456,8 +490,8 @@ class Card(QFrame):
         self.setObjectName("card")
         _add_shadow(self)
         self.body = QVBoxLayout(self)
-        self.body.setContentsMargins(20, 18, 20, 20)
-        self.body.setSpacing(12)
+        self.body.setContentsMargins(18, 15, 18, 17)
+        self.body.setSpacing(10)
 
         header = QHBoxLayout()
         header.setSpacing(8)
@@ -484,10 +518,10 @@ class GuidePanel(Card):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__("What is happening", parent=parent)
         header = QHBoxLayout()
-        header.setSpacing(14)
+        header.setSpacing(12)
 
         self.badge = QLabel("AI")
-        self.badge.setFixedSize(52, 52)
+        self.badge.setFixedSize(46, 46)
         self.badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         header.addWidget(self.badge)
 
@@ -582,9 +616,12 @@ class MainWindow(QMainWindow):
 
         self._buffer = ""
         self._running = False
+        self._paused = False
         self._user_stopped = False
         self._final_state = ""
         self._started_at = 0.0
+        self._paused_at = 0.0
+        self._paused_total = 0.0
         self._step = 0
 
         self._clock = QTimer(self)
@@ -614,13 +651,13 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(root)
 
         outer = QVBoxLayout(root)
-        outer.setContentsMargins(22, 22, 22, 14)
-        outer.setSpacing(16)
+        outer.setContentsMargins(18, 18, 18, 10)
+        outer.setSpacing(12)
 
         outer.addWidget(self._build_header())
 
         body = QHBoxLayout()
-        body.setSpacing(16)
+        body.setSpacing(14)
         body.addWidget(self._build_left_column(), 0)
         body.addLayout(self._build_right_column(), 1)
         outer.addLayout(body, 1)
@@ -632,12 +669,12 @@ class MainWindow(QMainWindow):
         header.setObjectName("header")
         _add_shadow(header, blur=40, y_offset=12)
         layout = QHBoxLayout(header)
-        layout.setContentsMargins(22, 18, 22, 18)
-        layout.setSpacing(16)
+        layout.setContentsMargins(18, 13, 18, 13)
+        layout.setSpacing(14)
 
         logo = QLabel("G")
         logo.setObjectName("logo")
-        logo.setFixedSize(54, 54)
+        logo.setFixedSize(48, 48)
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(logo)
 
@@ -662,6 +699,7 @@ class MainWindow(QMainWindow):
         self.status_pill.setObjectName("statusPill")
         self.status_pill.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.status_pill.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_pill.setFixedHeight(32)
         layout.addWidget(self.status_pill)
         return header
 
@@ -682,21 +720,20 @@ class MainWindow(QMainWindow):
 
     def _build_left_column(self) -> QWidget:
         container = QWidget()
-        container.setFixedWidth(408)
         column = QVBoxLayout(container)
         column.setContentsMargins(0, 0, 0, 0)
-        column.setSpacing(16)
+        column.setSpacing(12)
 
         task_card = Card(
             "Describe your task",
-            "Tell the agent the result you want. It decides the clicks.",
+            "State the result you want; the agent handles the clicks.",
         )
         self.prompt_edit = QPlainTextEdit()
         self.prompt_edit.setObjectName("promptEdit")
         self.prompt_edit.setPlaceholderText(
             "Example: Open Notepad and type a short welcome message."
         )
-        self.prompt_edit.setFixedHeight(118)
+        self.prompt_edit.setFixedHeight(105)
         self.prompt_edit.textChanged.connect(self._update_command_preview)
         task_card.body.addWidget(self.prompt_edit)
 
@@ -721,9 +758,26 @@ class MainWindow(QMainWindow):
             more_row.addWidget(button)
         more_row.addStretch(1)
         task_card.body.addLayout(more_row)
+
+        toggle_row = QHBoxLayout()
+        toggle_row.setSpacing(12)
+        toggle_text = QVBoxLayout()
+        toggle_text.setSpacing(1)
+        toggle_title = QLabel("Instant click")
+        toggle_title.setStyleSheet("color: #e8edf7; font-weight: 600;")
+        toggle_hint = QLabel("Skip pointer travel and click the target instantly")
+        toggle_hint.setObjectName("cardHint")
+        toggle_hint.setWordWrap(True)
+        toggle_text.addWidget(toggle_title)
+        toggle_text.addWidget(toggle_hint)
+        toggle_row.addLayout(toggle_text, 1)
+        self.instant_switch = Switch()
+        self.instant_switch.toggled.connect(self._update_command_preview)
+        toggle_row.addWidget(self.instant_switch, 0, Qt.AlignmentFlag.AlignVCenter)
+        task_card.body.addLayout(toggle_row)
         column.addWidget(task_card)
 
-        settings_card = Card("Connection and behaviour")
+        settings_card = Card("Model and key")
         settings_card.body.addWidget(self._field_label("Gemini model"))
         self.model_combo = QComboBox()
         self.model_combo.setObjectName("modelCombo")
@@ -752,69 +806,69 @@ class MainWindow(QMainWindow):
         self.storage_hint = QLabel("")
         self.storage_hint.setObjectName("storageHint")
         self.storage_hint.setWordWrap(True)
-        settings_card.body.addWidget(self.storage_hint)
 
-        self.remember_check = QCheckBox("Remember this key on this computer")
+        self.remember_check = QCheckBox("Remember this key")
         self.remember_check.setCursor(Qt.CursorShape.PointingHandCursor)
         self.remember_check.setChecked(True)
         settings_card.body.addWidget(self.remember_check)
 
-        divider = QFrame()
-        divider.setFixedHeight(1)
-        divider.setStyleSheet("background-color: #1d2a49;")
-        settings_card.body.addWidget(divider)
-
-        toggle_row = QHBoxLayout()
-        toggle_row.setSpacing(12)
-        toggle_text = QVBoxLayout()
-        toggle_text.setSpacing(1)
-        toggle_title = QLabel("Instant click")
-        toggle_title.setStyleSheet("color: #e8edf7; font-weight: 600;")
-        toggle_hint = QLabel("Click the target immediately instead of moving the pointer first")
-        toggle_hint.setObjectName("cardHint")
-        toggle_hint.setWordWrap(True)
-        toggle_text.addWidget(toggle_title)
-        toggle_text.addWidget(toggle_hint)
-        toggle_row.addLayout(toggle_text, 1)
-        self.instant_switch = Switch()
-        self.instant_switch.toggled.connect(self._update_command_preview)
-        toggle_row.addWidget(self.instant_switch, 0, Qt.AlignmentFlag.AlignVCenter)
-        settings_card.body.addLayout(toggle_row)
+        settings_card.body.addWidget(self.storage_hint)
         column.addWidget(settings_card)
-
-        actions = QHBoxLayout()
-        actions.setSpacing(10)
-        self.start_button = QPushButton("▶   Start task")
-        self.start_button.setObjectName("primary")
-        self.start_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.start_button.setMinimumHeight(46)
-        self.start_button.clicked.connect(self.start_task)
-        actions.addWidget(self.start_button, 1)
-
-        self.stop_button = QPushButton("■   Stop")
-        self.stop_button.setObjectName("danger")
-        self.stop_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.stop_button.setMinimumHeight(46)
-        self.stop_button.setEnabled(False)
-        self.stop_button.clicked.connect(self.stop_task)
-        actions.addWidget(self.stop_button)
-        column.addLayout(actions)
         column.addStretch(1)
 
         scroll = QScrollArea()
         scroll.setWidget(container)
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setMinimumWidth(426)
-        scroll.setMaximumWidth(426)
-        return scroll
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+
+        wrapper = QWidget()
+        wrapper.setFixedWidth(418)
+        wrapper_layout = QVBoxLayout(wrapper)
+        wrapper_layout.setContentsMargins(0, 0, 0, 0)
+        wrapper_layout.setSpacing(10)
+        wrapper_layout.addWidget(scroll, 1)
+
+        actions = QHBoxLayout()
+        actions.setSpacing(10)
+        self.start_button = QPushButton("▶   Start task")
+        self.start_button.setObjectName("primary")
+        self.start_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.start_button.setMinimumHeight(44)
+        self.start_button.clicked.connect(self.start_task)
+        actions.addWidget(self.start_button, 1)
+
+        self.pause_button = QPushButton("❚❚   Pause")
+        self.pause_button.setObjectName("pause")
+        self.pause_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.pause_button.setMinimumHeight(44)
+        self.pause_button.setEnabled(False)
+        self.pause_button.clicked.connect(self.toggle_pause)
+        actions.addWidget(self.pause_button)
+
+        self.stop_button = QPushButton("■   Stop")
+        self.stop_button.setObjectName("danger")
+        self.stop_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.stop_button.setMinimumHeight(44)
+        self.stop_button.setEnabled(False)
+        self.stop_button.clicked.connect(self.stop_task)
+        actions.addWidget(self.stop_button)
+        wrapper_layout.addLayout(actions)
+
+        pause_hint = QLabel(
+            "Global hotkey: Alt+F10 pauses or resumes this run anywhere in Windows."
+        )
+        pause_hint.setObjectName("cardHint")
+        pause_hint.setWordWrap(True)
+        wrapper_layout.addWidget(pause_hint)
+        return wrapper
 
     def _build_right_column(self) -> QVBoxLayout:
         column = QVBoxLayout()
-        column.setSpacing(16)
+        column.setSpacing(12)
 
         self.guide_panel = GuidePanel()
-        self.guide_panel.setMinimumHeight(330)
+        self.guide_panel.setMinimumHeight(350)
         column.addWidget(self.guide_panel, 0)
 
         log_card = Card("Live log", "Streamed directly from the agent process.")
@@ -913,9 +967,9 @@ class MainWindow(QMainWindow):
         )
         self.instant_switch.setChecked(instant)
         self.storage_hint.setText(
-            "Saved only on this computer at "
-            f"{config_path()}"
+            "Saved only on this computer. Use “Config folder” to open it."
         )
+        self.storage_hint.setToolTip(str(config_path()))
 
     def _collect_settings(self) -> dict[str, Any]:
         config = dict(self._config)
@@ -930,7 +984,10 @@ class MainWindow(QMainWindow):
         try:
             path = save_config(config)
             self._config = load_config()
-            self.storage_hint.setText(f"Saved only on this computer at {path}")
+            self.storage_hint.setText(
+                "Saved only on this computer. Use “Config folder” to open it."
+            )
+            self.storage_hint.setToolTip(str(path))
         except OSError as error:
             self._append_plain(
                 f"Could not save settings: {error}",
@@ -959,7 +1016,7 @@ class MainWindow(QMainWindow):
             program = sys.executable
             launcher = []
 
-        arguments = launcher + [str(PROJECT_ROOT / "main.py"), prompt]
+        arguments = launcher + ["main.py", prompt]
         model = self.model_combo.currentText().strip() or DEFAULT_MODEL
         arguments += ["--model", model]
         arguments.append("--instant-click" if self.instant_switch.isChecked() else "--no-instant-click")
@@ -1012,16 +1069,21 @@ class MainWindow(QMainWindow):
         environment.insert("GEMINI_API_KEY", key)
         environment.insert("PYTHONUNBUFFERED", "1")
         environment.insert("PYTHONIOENCODING", "utf-8")
+        environment.insert("GEMINI_PC_USE_STDIN_CONTROL", "1")
         self._process.setProcessEnvironment(environment)
         self._process.setWorkingDirectory(str(PROJECT_ROOT))
 
         self.log_view.clear()
         self._buffer = ""
+        self._paused = False
+        self.pause_button.setText("❚❚   Pause")
         self._user_stopped = False
         self._final_state = ""
         self._step = 0
         self.step_value.setText("0")
         self._started_at = time.monotonic()
+        self._paused_at = 0.0
+        self._paused_total = 0.0
         self.elapsed_value.setText("0:00")
         self._clock.start()
 
@@ -1033,18 +1095,43 @@ class MainWindow(QMainWindow):
 
         self._process.start(program, arguments)
 
+    def toggle_pause(self) -> None:
+        """Ask the child process to pause or resume at its next safe point."""
+        if not self._running:
+            return
+        if self._process.state() == QProcess.ProcessState.NotRunning:
+            return
+        if self._process.write(b"toggle\n") < 0:
+            self._append_plain(
+                "Could not send the pause command to the agent process.",
+                "#fb7185",
+            )
+
     def stop_task(self) -> None:
         if not self._running:
             return
         self._user_stopped = True
         self._set_status("stopping", "Stopping")
         self._append_plain("Stopping the agent…", "#fbbf24")
-        self._process.terminate()
-        QTimer.singleShot(3000, self._force_kill)
+        self._kill_process_tree()
 
-    def _force_kill(self) -> None:
-        if self._process.state() != QProcess.ProcessState.NotRunning:
-            self._process.kill()
+    def _kill_process_tree(self) -> None:
+        """Stop the agent, including child processes spawned by the py launcher."""
+        if self._process.state() == QProcess.ProcessState.NotRunning:
+            return
+        if sys.platform == "win32":
+            pid = int(self._process.processId())
+            if pid:
+                try:
+                    subprocess.run(
+                        ["taskkill", "/PID", str(pid), "/T", "/F"],
+                        capture_output=True,
+                        check=False,
+                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                    )
+                except OSError:
+                    pass
+        self._process.kill()
 
     def _set_running(self, running: bool) -> None:
         self._running = running
@@ -1059,6 +1146,7 @@ class MainWindow(QMainWindow):
             widget.setEnabled(not running)
         self.start_button.setEnabled(not running)
         self.stop_button.setEnabled(running)
+        self.pause_button.setEnabled(running)
         self.activity.setVisible(running)
         self._update_command_preview()
 
@@ -1073,7 +1161,11 @@ class MainWindow(QMainWindow):
     def _tick_clock(self) -> None:
         if not self._started_at:
             return
-        elapsed = int(time.monotonic() - self._started_at)
+        now = time.monotonic()
+        paused = self._paused_total
+        if self._paused_at:
+            paused += now - self._paused_at
+        elapsed = max(0, int(now - self._started_at - paused))
         self.elapsed_value.setText(f"{elapsed // 60}:{elapsed % 60:02d}")
 
     # ----------------------------------------------------------------- logs
@@ -1144,6 +1236,22 @@ class MainWindow(QMainWindow):
                     )
                 )
 
+        if PAUSED_RE.match(self._message_of(line)):
+            if not self._paused:
+                self._paused_at = time.monotonic()
+            self._paused = True
+            self.pause_button.setText("▶   Resume")
+            self._set_status("paused", "Paused")
+            self.guide_panel.show_guide(paused(), step=self._step or None)
+        elif RESUMED_RE.match(self._message_of(line)):
+            if self._paused_at:
+                self._paused_total += time.monotonic() - self._paused_at
+                self._paused_at = 0.0
+            self._paused = False
+            self.pause_button.setText("❚❚   Pause")
+            self._set_status("running", "Running")
+            self.guide_panel.show_guide(resumed(self._step), step=self._step or None)
+
         self._append_log_line(line)
 
     @staticmethod
@@ -1182,6 +1290,10 @@ class MainWindow(QMainWindow):
             message_color = "#a78bfa"
         elif message.startswith("[DONE]"):
             message_color = "#34d399"
+        elif message.startswith("[PAUSED]"):
+            message_color = "#fbbf24"
+        elif message.startswith("[RESUMED]"):
+            message_color = "#34d399"
 
         self.log_view.appendHtml(
             f'<span style="color:#536382;">{html.escape(timestamp)}</span> '
@@ -1216,6 +1328,9 @@ class MainWindow(QMainWindow):
 
         self._clock.stop()
         self._tick_clock()
+        self._paused = False
+        self._paused_at = 0.0
+        self.pause_button.setText("❚❚   Pause")
         self._set_running(False)
 
         if self._user_stopped or self._final_state == "cancelled":
@@ -1256,15 +1371,21 @@ class MainWindow(QMainWindow):
 
     def _on_process_error(self, error: QProcess.ProcessError) -> None:
         self._append_plain(f"Process error: {error.name}", "#fb7185")
-        if not self._running:
+        if error == QProcess.ProcessError.FailedToStart:
+            self._clock.stop()
+            self._paused = False
+            self.pause_button.setText("❚❚   Pause")
+            self._set_running(False)
+            self._set_status("error", "Failed")
             self.guide_panel.show_guide(
                 failure("Could not start the agent process. Check the Python installation.")
             )
+        elif not self._running:
             self._set_status("error", "Failed")
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt naming
         if self._process.state() != QProcess.ProcessState.NotRunning:
-            self._process.kill()
+            self._kill_process_tree()
             self._process.waitForFinished(1500)
         event.accept()
 

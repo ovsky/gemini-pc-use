@@ -6,18 +6,14 @@ for integrations that only need a plain text completion.
 
 from __future__ import annotations
 
-import logging
-
 from google import genai
 
-from config import DEFAULT_MODEL, load_env_files, resolve_api_key
-
-logger = logging.getLogger(__name__)
+from config import DEFAULT_MODEL, load_env_file, resolve_api_key
 
 
 def ask_gemini(prompt: str, model: str | None = None) -> str:
     """Send a text prompt to Gemini and return the response text."""
-    load_env_files()
+    load_env_file()
     api_key = resolve_api_key()
     if not api_key:
         raise RuntimeError(

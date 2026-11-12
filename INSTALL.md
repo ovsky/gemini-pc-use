@@ -75,25 +75,40 @@ This installs the following packages:
 3. Create a new API key
 4. Copy the API key
 
-### Create .env File
+### Save the Key in the System Configuration
 
-Create a new file named `.env` in the project directory:
+The GUI and the command line share one per-user configuration file, so you only
+need to save the key once:
 
-```bash
-# Windows
-copy .env.example .env
+- **GUI:** start `py -3.13 main.py`, paste the key into the API key field, and
+  press **Save**. The field is pre-filled automatically the next time you open
+  the window.
+- **CLI:** save the key directly and exit:
 
-# Or create manually
-notepad .env
-```
+  ```bash
+  py -3.13 main.py --save-key --api-key "YOUR_API_KEY_HERE"
+  ```
 
-Add the following content:
+  Remove it again with:
+
+  ```bash
+  py -3.13 main.py --forget-key
+  ```
+
+On Windows the key is stored in
+`%APPDATA%\GeminiPCUse\config.json`. On macOS and Linux the equivalent per-user
+configuration directory is used. The key never lives in the project directory.
+
+### Optional .env Fallback
+
+If you prefer a project-local file, copy `.env.example` to `.env` and set:
 
 ```
 GEMINI_API_KEY=YOUR_API_KEY_HERE
 ```
 
-Replace `YOUR_API_KEY_HERE` with your actual API key.
+This is optional. The system configuration takes priority, and `.env` files are
+ignored by Git.
 
 ## Step 7: Test Installation
 
@@ -113,11 +128,15 @@ py -3.13 main.py "Show me the time"
 
 If everything is installed correctly, the agent should start and attempt to execute the task. The GUI shows a live log and explains every action in the teaching panel.
 
+While a task is running, press `Alt+F10` anywhere in Windows to pause or
+resume it. The GUI Pause button sends the same signal.
+
 ## Troubleshooting
 
 ### "GEMINI_API_KEY not found"
 
-- Make sure the `.env` file exists in the project directory
+- Save the key in the GUI, or run `py -3.13 main.py --save-key --api-key "YOUR_KEY"`
+- Alternatively, set the `GEMINI_API_KEY` environment variable or create a `.env` file
 - Verify the API key is correctly entered
 - Don't use quotes around the API key
 

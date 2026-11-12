@@ -20,13 +20,17 @@ and a much faster agent loop.
   colour-coded by level.
 - **Teaching panel** — explains the current action in four parts:
   *What happened*, *why it matters*, *how it works*, and *try this*.
-- **Persistent API key** — saved to a per-user system file, never to the project
-  directory. The GUI can also read `GEMINI_API_KEY` from your environment or an
-  env file.
+- **Persistent API key** — saved to a per-user system file and restored by both
+  the GUI and the command line, never to the project directory. A
+  `GEMINI_API_KEY` environment variable or an optional local `.env` file also
+  works.
 - **Model picker** — choose any Gemini model. `gemini-3.5-flash-lite` is the
   default; the combo box is editable.
 - **Instant click mode** — click directly on the target point without animating
   the pointer across the screen. Roughly halves the time spent per mouse action.
+- **Global pause/resume** — press `Alt+F10` anywhere in Windows to pause the
+  agent before its next action, and press it again to resume. The GUI also has a
+  Pause button with the same behavior.
 - **Faster loop** — fixed two-second sleeps removed, one reusable Gemini client,
   downscaled JPEG screenshots, trimmed action history, shorter typing interval,
   and automatic fallback only when an API error actually happens.
@@ -101,7 +105,8 @@ Use the **Config folder** button in the footer to open that directory. Uncheck
 4. Press **Start task** (or `Ctrl+Enter`).
 5. Watch the live log and the teaching panel. The panel updates after every
    action so you can see exactly what the agent decided and why.
-6. Press **Stop** (or `Esc`) at any time.
+6. Press **Pause** or `Alt+F10` to pause and resume, and **Stop** (or `Esc`) to
+   end the run at any time.
 
 The footer always shows the exact command that will be executed, for example:
 
@@ -129,6 +134,8 @@ py -3.13 main.py "goal" --max-steps 40
 py -3.13 main.py "goal" --step-delay 0
 py -3.13 main.py "goal" --debug-screenshots
 py -3.13 main.py "goal" --verbose
+py -3.13 main.py --save-key --api-key "your-key"
+py -3.13 main.py --forget-key
 py -3.13 main.py --help
 ```
 
@@ -136,8 +143,25 @@ The API key is resolved in this order:
 
 1. `--api-key` argument
 2. `GEMINI_API_KEY` environment variable
-3. the saved GUI configuration
-4. `.env`, `GEMINI_API_KEY.env`, or `enviro.env` in the project directory
+3. the saved per-user system configuration
+4. an optional `.env` file in the project directory
+
+The system configuration is shared by the GUI and the command line, so a key
+saved once is restored everywhere. Save or remove it from the command line with
+`--save-key` and `--forget-key`.
+
+---
+
+## Pause and resume
+
+While a task is running, press `Alt+F10` anywhere in Windows. The agent keeps
+the current step, finishes any action that is already in progress, and then
+waits before taking another action. Press `Alt+F10` again to continue from the
+same point. The GUI Pause button sends the same signal to the child process.
+
+The shortcut is registered by the agent process, so it also works when the
+agent was started from a terminal without the GUI. If another program already
+owns `Alt+F10`, the agent logs a warning and the GUI button still works.
 
 ---
 
@@ -216,12 +240,13 @@ supports it.
 
 - The agent controls the real mouse and keyboard. Keep an eye on it.
 - `Esc` stops the run from the GUI.
+- `Alt+F10` pauses or resumes the running agent globally in Windows.
 - PyAutoGUI fail-safe is disabled so the agent can reach screen corners. Do not
   rely on slamming the pointer into a corner to stop it; use **Stop**.
-- Never commit your API key. The GUI stores it outside the repository, but the
-  legacy `GEMINI_API_KEY.env` and `enviro.env` files in this checkout may still
-  contain a key that is tracked by Git. Rotate the key and remove those files
-  from version control if that applies to you.
+- The API key is stored only in the per-user system configuration, outside the
+  repository. Project env files are never required.
+- If a key was ever committed to Git, revoke it in Google AI Studio and create a
+  new one. Purging history does not invalidate a leaked key.
 
 ---
 

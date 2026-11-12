@@ -35,6 +35,10 @@ env/
 # Environment variables
 .env
 .env.local
+*.env
+
+# Local secrets (never commit real keys)
+*.key
 
 # Logs
 *.log

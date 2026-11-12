@@ -33,7 +33,7 @@ KNOWN_MODELS = [
 ]
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-ENV_FILES = (".env", "GEMINI_API_KEY.env", "enviro.env")
+LOCAL_ENV_FILE = ".env"
 DEFAULT_STEP_DELAY = 0.1
 DEFAULT_MAX_STEPS = 80
 
@@ -83,8 +83,14 @@ def load_config() -> dict[str, Any]:
 
     if not isinstance(config.get("api_key"), str):
         config["api_key"] = ""
-    if not isinstance(config.get("model"), str) or not config["model"].strip():
+    model_name = config.get("model")
+    if not isinstance(model_name, str) or not model_name.strip():
         config["model"] = DEFAULT_MODEL
+    elif model_name.strip().lower().startswith(("gemini-2.", "gemini-2-")):
+        # Migrate configurations written for the old Gemini 2 series target.
+        config["model"] = DEFAULT_MODEL
+    else:
+        config["model"] = model_name.strip()
     config["instant_click"] = bool(config.get("instant_click", False))
     config["remember_api_key"] = bool(config.get("remember_api_key", True))
     config["save_screenshots"] = bool(config.get("save_screenshots", False))
@@ -128,52 +134,58 @@ def save_config(config: dict[str, Any]) -> Path:
     return path
 
 
-def load_env_files() -> None:
-    """Load the environment files that exist in the project directory.
-
-    The project historically shipped several differently named env files. All
-    of them are supported so existing installations keep working.
-    """
+def load_env_file() -> None:
+    """Load the optional local ``.env`` file without overriding real env vars."""
     try:
         from dotenv import load_dotenv
     except ImportError:
         return
 
-    for filename in ENV_FILES:
-        candidate = PROJECT_ROOT / filename
-        if candidate.exists():
-            load_dotenv(candidate, override=False)
+    candidate = PROJECT_ROOT / LOCAL_ENV_FILE
+    if candidate.exists():
+        load_dotenv(candidate, override=False)
 
 
-def api_key_from_env_files() -> str:
-    """Read an API key from the supported env files without importing dotenv."""
-    for filename in ENV_FILES:
-        candidate = PROJECT_ROOT / filename
-        if not candidate.exists():
-            continue
-        try:
-            for raw_line in candidate.read_text(encoding="utf-8").splitlines():
-                line = raw_line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                name, value = line.split("=", 1)
-                if name.strip() == "GEMINI_API_KEY":
-                    value = value.strip().strip('"').strip("'")
-                    if value and value != "your_api_key_here":
-                        return value
-        except OSError:
-            continue
+def api_key_from_env_file() -> str:
+    """Read an API key from the optional local ``.env`` file."""
+    candidate = PROJECT_ROOT / LOCAL_ENV_FILE
+    if not candidate.exists():
+        return ""
+    try:
+        for raw_line in candidate.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            name, value = line.split("=", 1)
+            if name.strip() == "GEMINI_API_KEY":
+                value = value.strip().strip('"').strip("'")
+                if value and value != "your_api_key_here":
+                    return value
+    except OSError:
+        return ""
     return ""
 
 
 def resolve_api_key(config: dict[str, Any] | None = None) -> str:
-    """Resolve the API key from the environment, saved config, or env files."""
+    """Resolve the key from the environment, saved system config, or ``.env``.
+
+    The system configuration is written by the GUI and restored by both the GUI
+    and the command line, so a saved key works everywhere without project files.
+    """
     key = os.environ.get("GEMINI_API_KEY", "").strip()
     if key:
-        return key
+        return key.strip('"').strip("'")
     if config is None:
         config = load_config()
     key = str(config.get("api_key", "")).strip()
     if key:
-        return key
-    return api_key_from_env_files()
+        return key.strip('"').strip("'")
+    return api_key_from_env_file()
+
+
+def clear_api_key() -> Path:
+    """Remove the saved API key from the system configuration."""
+    settings = load_config()
+    settings["api_key"] = ""
+    settings["remember_api_key"] = False
+    return save_config(settings)

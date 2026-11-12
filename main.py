@@ -14,8 +14,14 @@ import argparse
 import logging
 import sys
 
-from agent import run_agent
-from config import DEFAULT_MODEL
+from agent import run_agent_with_pause
+from config import (
+    DEFAULT_MODEL,
+    clear_api_key,
+    load_config,
+    resolve_api_key,
+    save_config,
+)
 from logging_config import setup_logger
 
 
@@ -48,7 +54,24 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--api-key",
         default=None,
-        help="Gemini API key. Prefer the GUI or the GEMINI_API_KEY variable.",
+        help=(
+            "Gemini API key. Use --save-key to store it in the system "
+            "configuration, or set GEMINI_API_KEY in the environment."
+        ),
+    )
+    key_group = parser.add_mutually_exclusive_group()
+    key_group.add_argument(
+        "--save-key",
+        action="store_true",
+        help=(
+            "Save --api-key (or the current GEMINI_API_KEY) to the per-user "
+            "system configuration and exit."
+        ),
+    )
+    key_group.add_argument(
+        "--forget-key",
+        action="store_true",
+        help="Remove the saved API key from the per-user system configuration and exit.",
     )
     parser.add_argument(
         "--instant-click",
@@ -93,6 +116,26 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
+    if args.forget_key:
+        path = clear_api_key()
+        print(f"Removed the saved API key from {path}")
+        return 0
+
+    if args.save_key:
+        settings = load_config()
+        key = (args.api_key or resolve_api_key(settings)).strip()
+        if not key:
+            print(
+                "No API key was provided. Pass --api-key or set GEMINI_API_KEY.",
+                file=sys.stderr,
+            )
+            return 2
+        settings["api_key"] = key
+        settings["remember_api_key"] = True
+        path = save_config(settings)
+        print(f"Saved the API key to {path}")
+        return 0
+
     if args.gui or not args.prompt:
         try:
             from frontend.app import launch_gui
@@ -112,7 +155,7 @@ def main(argv: list[str] | None = None) -> int:
 
     setup_logger(logging.DEBUG if args.verbose else logging.INFO)
     logging.info("Starting the agent with the goal: '%s'", args.prompt)
-    success = run_agent(
+    success = run_agent_with_pause(
         args.prompt,
         api_key=args.api_key,
         model=args.model,
