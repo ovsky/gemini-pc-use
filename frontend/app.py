@@ -304,8 +304,8 @@ QPushButton#primary {
     color: #ffffff;
     border: 0;
     border-radius: 11px;
-    padding: 12px 18px;
-    font-size: 10.5pt;
+    padding: 12px 14px;
+    font-size: 10pt;
     font-weight: 700;
 }
 QPushButton#primary:hover {
@@ -325,8 +325,8 @@ QPushButton#danger {
     color: #fb7185;
     border: 1px solid #5c2a3b;
     border-radius: 11px;
-    padding: 12px 16px;
-    font-size: 10pt;
+    padding: 12px 10px;
+    font-size: 9.5pt;
     font-weight: 600;
 }
 QPushButton#danger:hover {
@@ -357,8 +357,8 @@ QPushButton#pause {
     color: #fbbf24;
     border: 1px solid #4a3d24;
     border-radius: 11px;
-    padding: 12px 16px;
-    font-size: 10pt;
+    padding: 12px 10px;
+    font-size: 9.5pt;
     font-weight: 600;
 }
 QPushButton#pause:hover {
@@ -829,22 +829,25 @@ class MainWindow(QMainWindow):
         wrapper_layout.setSpacing(10)
         wrapper_layout.addWidget(scroll, 1)
 
-        actions = QHBoxLayout()
-        actions.setSpacing(10)
+        actions_top = QHBoxLayout()
+        actions_top.setSpacing(10)
         self.start_button = QPushButton("▶   Start task")
         self.start_button.setObjectName("primary")
         self.start_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.start_button.setMinimumHeight(44)
         self.start_button.clicked.connect(self.start_task)
-        actions.addWidget(self.start_button, 1)
+        actions_top.addWidget(self.start_button, 1)
+        wrapper_layout.addLayout(actions_top)
 
+        actions_bottom = QHBoxLayout()
+        actions_bottom.setSpacing(10)
         self.pause_button = QPushButton("❚❚   Pause")
         self.pause_button.setObjectName("pause")
         self.pause_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.pause_button.setMinimumHeight(44)
         self.pause_button.setEnabled(False)
         self.pause_button.clicked.connect(self.toggle_pause)
-        actions.addWidget(self.pause_button)
+        actions_bottom.addWidget(self.pause_button, 1)
 
         self.stop_button = QPushButton("■   Stop")
         self.stop_button.setObjectName("danger")
@@ -852,8 +855,8 @@ class MainWindow(QMainWindow):
         self.stop_button.setMinimumHeight(44)
         self.stop_button.setEnabled(False)
         self.stop_button.clicked.connect(self.stop_task)
-        actions.addWidget(self.stop_button)
-        wrapper_layout.addLayout(actions)
+        actions_bottom.addWidget(self.stop_button, 1)
+        wrapper_layout.addLayout(actions_bottom)
 
         pause_hint = QLabel(
             "Global hotkey: Alt+F10 pauses or resumes this run anywhere in Windows."
